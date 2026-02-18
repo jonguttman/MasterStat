@@ -1,0 +1,155 @@
+name: "virtual-thermostat"
+components:
+  - id: main
+    capabilities:
+      - id: temperatureMeasurement
+        version: 1
+      - id: thermostatMode
+        version: 1
+      - id: thermostatHeatingSetpoint
+        version: 1
+      - id: thermostatCoolingSetpoint
+        version: 1
+      - id: thermostatOperatingState
+        version: 1
+      - id: masterstat.setTemperature
+        version: 1
+      - id: masterstat.outdoorTemperature
+        version: 1
+      - id: masterstat.statusText
+        version: 1
+      - id: masterstat.energyTracking
+        version: 1
+    categories:
+      - name: Thermostat
+preferences:
+  - preferenceId: pat
+    title: "SmartThings Personal Access Token"
+    description: "Your SmartThings PAT for REST API calls to control the outlet"
+    required: true
+    preferenceType: string
+    definition:
+      stringType: password
+      default: ""
+  - preferenceId: outletDeviceId
+    title: "Sonoff Outlet Device ID"
+    description: "The SmartThings device ID of the Sonoff S31 Lite ZB outlet"
+    required: true
+    preferenceType: string
+    definition:
+      stringType: text
+      default: ""
+  - preferenceId: tempUnit
+    title: "Temperature Unit"
+    description: "Display temperature in Fahrenheit or Celsius"
+    required: false
+    preferenceType: enumeration
+    definition:
+      options:
+        F: "Fahrenheit"
+        C: "Celsius"
+      default: "F"
+  - preferenceId: defaultHeatSetpoint
+    title: "Default Heat Setpoint"
+    description: "Default heating target temperature"
+    required: false
+    preferenceType: integer
+    definition:
+      minimum: 50
+      maximum: 90
+      default: 72
+  - preferenceId: defaultCoolSetpoint
+    title: "Default Cool Setpoint"
+    description: "Default cooling target temperature"
+    required: false
+    preferenceType: integer
+    definition:
+      minimum: 60
+      maximum: 95
+      default: 76
+  - preferenceId: deadband
+    title: "Deadband (degrees)"
+    description: "Temperature deadband to prevent short cycling"
+    required: false
+    preferenceType: integer
+    definition:
+      minimum: 1
+      maximum: 5
+      default: 2
+  - preferenceId: maxRuntime
+    title: "Max Runtime (minutes)"
+    description: "Safety shutoff after continuous runtime exceeds this value"
+    required: false
+    preferenceType: integer
+    definition:
+      minimum: 15
+      maximum: 480
+      default: 120
+  - preferenceId: staleTempTimeout
+    title: "Stale Temp Timeout (minutes)"
+    description: "Shut off outlet if no temperature update received within this time"
+    required: false
+    preferenceType: integer
+    definition:
+      minimum: 5
+      maximum: 120
+      default: 30
+  - preferenceId: minCycleTime
+    title: "Min Cycle Time (minutes)"
+    description: "Minimum time between outlet state changes to prevent short cycling"
+    required: false
+    preferenceType: integer
+    definition:
+      minimum: 1
+      maximum: 15
+      default: 5
+  - preferenceId: scheduleEnabled
+    title: "Enable Schedule"
+    description: "Enable day/night temperature setback schedule"
+    required: false
+    preferenceType: boolean
+    definition:
+      default: false
+  - preferenceId: dayStartHour
+    title: "Day Start Hour (0-23)"
+    description: "Hour when day schedule begins"
+    required: false
+    preferenceType: integer
+    definition:
+      minimum: 0
+      maximum: 23
+      default: 6
+  - preferenceId: daySetpoint
+    title: "Day Setpoint"
+    description: "Target temperature during day hours"
+    required: false
+    preferenceType: integer
+    definition:
+      minimum: 50
+      maximum: 95
+      default: 72
+  - preferenceId: nightStartHour
+    title: "Night Start Hour (0-23)"
+    description: "Hour when night schedule begins"
+    required: false
+    preferenceType: integer
+    definition:
+      minimum: 0
+      maximum: 23
+      default: 22
+  - preferenceId: nightSetpoint
+    title: "Night Setpoint"
+    description: "Target temperature during night hours"
+    required: false
+    preferenceType: integer
+    definition:
+      minimum: 50
+      maximum: 95
+      default: 65
+  - preferenceId: outdoorTempEnabled
+    title: "Enable Outdoor Temp Logic"
+    description: "Use outdoor temperature to skip unnecessary heating/cooling"
+    required: false
+    preferenceType: boolean
+    definition:
+      default: false

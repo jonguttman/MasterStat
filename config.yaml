@@ -1,0 +1,6 @@
+name: "MasterStat Virtual Thermostat"
+packageKey: "masterstat.virtual-thermostat"
+description: "Virtual thermostat that controls a Sonoff S31 Lite ZB outlet based on Cielo Breez Plus temperature readings"
+permissions:
+  lan: {}
+  discovery: {}
