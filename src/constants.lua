@@ -61,9 +61,9 @@ constants.FIELD_STALE_ALERT = "stale_alert"
 
 constants.SET_TEMPERATURE_CAP = [[
 {
-  "id": "masterstat.setTemperature",
+  "id": "benchventure06596.settemperature",
   "version": 1,
-  "name": "Set Temperature",
+  "name": "setTemperature",
   "status": "proposed",
   "attributes": {
     "temperature": {
@@ -87,8 +87,7 @@ constants.SET_TEMPERATURE_CAP = [[
       "arguments": [
         {
           "name": "temperature",
-          "schema": { "type": "number" },
-          "required": true
+          "schema": { "type": "number" }
         }
       ]
     }
@@ -98,9 +97,9 @@ constants.SET_TEMPERATURE_CAP = [[
 
 constants.OUTDOOR_TEMPERATURE_CAP = [[
 {
-  "id": "masterstat.outdoorTemperature",
+  "id": "benchventure06596.outdoortemperature",
   "version": 1,
-  "name": "Outdoor Temperature",
+  "name": "outdoorTemperature",
   "status": "proposed",
   "attributes": {
     "outdoorTemperature": {
@@ -124,8 +123,7 @@ constants.OUTDOOR_TEMPERATURE_CAP = [[
       "arguments": [
         {
           "name": "temperature",
-          "schema": { "type": "number" },
-          "required": true
+          "schema": { "type": "number" }
         }
       ]
     }
@@ -135,9 +133,9 @@ constants.OUTDOOR_TEMPERATURE_CAP = [[
 
 constants.STATUS_TEXT_CAP = [[
 {
-  "id": "masterstat.statusText",
+  "id": "benchventure06596.statustext",
   "version": 1,
-  "name": "Status Text",
+  "name": "statusText",
   "status": "proposed",
   "attributes": {
     "statusText": {
@@ -156,9 +154,9 @@ constants.STATUS_TEXT_CAP = [[
 
 constants.ENERGY_TRACKING_CAP = [[
 {
-  "id": "masterstat.energyTracking",
+  "id": "benchventure06596.energytracking",
   "version": 1,
-  "name": "Energy Tracking",
+  "name": "energyTracking",
   "status": "proposed",
   "attributes": {
     "dailyRuntime": {

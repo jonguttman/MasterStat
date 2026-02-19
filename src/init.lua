@@ -125,23 +125,35 @@ local function handle_off(driver, device, command)
 end
 
 --- Handle heating setpoint change
+--- SmartThings delivers standard thermostat setpoints in Celsius; convert to user unit
 local function handle_set_heating_setpoint(driver, device, command)
   local setpoint = command.args.setpoint
-  log.info(string.format("Heating setpoint set to: %.1f", setpoint))
+  local unit = pref(device, "tempUnit", "F")
+  if unit == "F" then
+    setpoint = (setpoint * 9 / 5) + 32
+  end
+  setpoint = math.floor(setpoint + 0.5)  -- round to integer
+  log.info(string.format("Heating setpoint set to: %d°%s (raw: %.2f°C)", setpoint, unit, command.args.setpoint))
 
   device:set_field(constants.FIELD_HEAT_SETPOINT, setpoint, { persist = true })
-  device:emit_event(heating_setpoint.heatingSetpoint({ value = setpoint, unit = pref(device, "tempUnit", "F") }))
+  device:emit_event(heating_setpoint.heatingSetpoint({ value = setpoint, unit = unit }))
 
   thermostat_logic.evaluate(driver, device, build_caps())
 end
 
 --- Handle cooling setpoint change
+--- SmartThings delivers standard thermostat setpoints in Celsius; convert to user unit
 local function handle_set_cooling_setpoint(driver, device, command)
   local setpoint = command.args.setpoint
-  log.info(string.format("Cooling setpoint set to: %.1f", setpoint))
+  local unit = pref(device, "tempUnit", "F")
+  if unit == "F" then
+    setpoint = (setpoint * 9 / 5) + 32
+  end
+  setpoint = math.floor(setpoint + 0.5)  -- round to integer
+  log.info(string.format("Cooling setpoint set to: %d°%s (raw: %.2f°C)", setpoint, unit, command.args.setpoint))
 
   device:set_field(constants.FIELD_COOL_SETPOINT, setpoint, { persist = true })
-  device:emit_event(cooling_setpoint.coolingSetpoint({ value = setpoint, unit = pref(device, "tempUnit", "F") }))
+  device:emit_event(cooling_setpoint.coolingSetpoint({ value = setpoint, unit = unit }))
 
   thermostat_logic.evaluate(driver, device, build_caps())
 end
@@ -155,25 +167,26 @@ local function device_added(driver, device)
   log.info("MasterStat device added: " .. device.id)
 
   local unit = pref(device, "tempUnit", constants.DEFAULT_TEMP_UNIT)
-  local heat_sp = pref(device, "defaultHeatSetpoint", constants.DEFAULT_HEAT_SETPOINT)
-  local cool_sp = pref(device, "defaultCoolSetpoint", constants.DEFAULT_COOL_SETPOINT)
 
-  -- Initialize fields
+  -- Initialize fields (setpoints will be relayed from Cielo thermostat via Rules)
   device:set_field(constants.FIELD_MODE, "off", { persist = true })
-  device:set_field(constants.FIELD_HEAT_SETPOINT, heat_sp, { persist = true })
-  device:set_field(constants.FIELD_COOL_SETPOINT, cool_sp, { persist = true })
+  device:set_field(constants.FIELD_HEAT_SETPOINT, constants.DEFAULT_HEAT_SETPOINT, { persist = true })
+  device:set_field(constants.FIELD_COOL_SETPOINT, constants.DEFAULT_COOL_SETPOINT, { persist = true })
   device:set_field(constants.FIELD_OUTLET_ON, false)
   device:set_field(constants.FIELD_STALE_ALERT, false)
   device:set_field(constants.FIELD_ENERGY_TODAY_MINS, 0)
   device:set_field(constants.FIELD_ENERGY_DAY_OF_YEAR, tonumber(os.date("%j")))
 
   -- Emit initial states
+  device:emit_event(temp_measurement.temperature({ value = 0, unit = unit }))
   device:emit_event(thermostat_mode.thermostatMode.off())
   device:emit_event(operating_state.thermostatOperatingState.idle())
-  device:emit_event(heating_setpoint.heatingSetpoint({ value = heat_sp, unit = unit }))
-  device:emit_event(cooling_setpoint.coolingSetpoint({ value = cool_sp, unit = unit }))
+  device:emit_event(heating_setpoint.heatingSetpoint({ value = constants.DEFAULT_HEAT_SETPOINT, unit = unit }))
+  device:emit_event(cooling_setpoint.coolingSetpoint({ value = constants.DEFAULT_COOL_SETPOINT, unit = unit }))
   device:emit_event(status_text_cap.statusText({ value = "Waiting for temperature reading..." }))
   device:emit_event(energy_tracking_cap.dailyRuntime({ value = 0, unit = "min" }))
+  device:emit_event(set_temperature_cap.temperature({ value = 0, unit = unit }))
+  device:emit_event(outdoor_temperature_cap.outdoorTemperature({ value = 0, unit = unit }))
 
   device:emit_event(thermostat_mode.supportedThermostatModes({
     "off", "heat", "cool", "auto"
@@ -192,13 +205,24 @@ local function device_init(driver, device)
     device:set_field(constants.FIELD_STALE_ALERT, false)
   end
 
+  -- Re-emit persisted state so the app UI is correct after restart
+  local unit = pref(device, "tempUnit", constants.DEFAULT_TEMP_UNIT)
+  local heat_sp = device:get_field(constants.FIELD_HEAT_SETPOINT) or constants.DEFAULT_HEAT_SETPOINT
+  local cool_sp = device:get_field(constants.FIELD_COOL_SETPOINT) or constants.DEFAULT_COOL_SETPOINT
+  local mode = device:get_field(constants.FIELD_MODE) or "off"
+
+  device:emit_event(heating_setpoint.heatingSetpoint({ value = heat_sp, unit = unit }))
+  device:emit_event(cooling_setpoint.coolingSetpoint({ value = cool_sp, unit = unit }))
+  device:emit_event(thermostat_mode.thermostatMode(mode))
+  device:emit_event(operating_state.thermostatOperatingState.idle())
+  device:emit_event(status_text_cap.statusText({ value = "Waiting for temperature reading..." }))
+
   -- Timer 1: Periodic evaluation (every 30s)
   device.thread:call_on_schedule(constants.EVAL_INTERVAL, function()
     thermostat_logic.evaluate(driver, device, build_caps())
   end, "eval_timer")
 
-  -- Timer 2: Stale temp check (every 60s) — handled within evaluate()
-  -- Timer 3: Energy tracking (every 60s)
+  -- Timer 2: Energy tracking (every 60s)
   device.thread:call_on_schedule(constants.ENERGY_TRACK_INTERVAL, function()
     energy_tracker.accumulate(driver, device, energy_tracking_cap)
   end, "energy_timer")
@@ -215,10 +239,8 @@ local function info_changed(driver, device, event, args)
 
   -- Re-emit setpoints if they may have changed via defaults
   local unit = pref(device, "tempUnit", constants.DEFAULT_TEMP_UNIT)
-  local heat_sp = device:get_field(constants.FIELD_HEAT_SETPOINT) or
-                  pref(device, "defaultHeatSetpoint", constants.DEFAULT_HEAT_SETPOINT)
-  local cool_sp = device:get_field(constants.FIELD_COOL_SETPOINT) or
-                  pref(device, "defaultCoolSetpoint", constants.DEFAULT_COOL_SETPOINT)
+  local heat_sp = device:get_field(constants.FIELD_HEAT_SETPOINT) or constants.DEFAULT_HEAT_SETPOINT
+  local cool_sp = device:get_field(constants.FIELD_COOL_SETPOINT) or constants.DEFAULT_COOL_SETPOINT
   device:emit_event(heating_setpoint.heatingSetpoint({ value = heat_sp, unit = unit }))
   device:emit_event(cooling_setpoint.coolingSetpoint({ value = cool_sp, unit = unit }))
 

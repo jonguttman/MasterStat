@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.2.0 — 2026-02-19
+
+### Changed
+- Removed outbound REST API calls from Edge driver (SmartThings hub blocks external HTTPS)
+- Driver is now a pure logic engine — receives temperature via Routines/Rules, emits operating state
+- Outlet control delegated to SmartThings Routines that mirror thermostatOperatingState
+- Temperature input via SmartThings Rules API that relays Cielo readings to setTemperature command
+- Removed polling timer and api_client dependency from thermostat_logic and init
+
 ## v0.1.0 — 2026-02-18
 
 ### Added

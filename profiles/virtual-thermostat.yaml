@@ -1,4 +1,7 @@
 name: "virtual-thermostat"
+metadata:
+  vid: "6eed5aa6-4af5-32cc-85fc-0329e977596d"
+  mnmn: "SmartThingsCommunity"
 components:
   - id: main
     capabilities:
@@ -12,34 +15,52 @@ components:
         version: 1
       - id: thermostatOperatingState
         version: 1
-      - id: masterstat.setTemperature
+      - id: benchventure06596.settemperature
         version: 1
-      - id: masterstat.outdoorTemperature
+      - id: benchventure06596.outdoortemperature
         version: 1
-      - id: masterstat.statusText
+      - id: benchventure06596.statustext
         version: 1
-      - id: masterstat.energyTracking
+      - id: benchventure06596.energytracking
         version: 1
     categories:
       - name: Thermostat
 preferences:
   - preferenceId: pat
+    name: pat
     title: "SmartThings Personal Access Token"
     description: "Your SmartThings PAT for REST API calls to control the outlet"
     required: true
     preferenceType: string
     definition:
       stringType: password
+      minLength: 0
+      maxLength: 100
+      default: ""
+  - preferenceId: thermostatDeviceId
+    name: thermostatDeviceId
+    title: "Cielo Thermostat Device ID"
+    description: "The SmartThings device ID of the Cielo Breez Plus thermostat to read temperature from"
+    required: true
+    preferenceType: string
+    definition:
+      stringType: text
+      minLength: 0
+      maxLength: 100
       default: ""
   - preferenceId: outletDeviceId
+    name: outletDeviceId
     title: "Sonoff Outlet Device ID"
     description: "The SmartThings device ID of the Sonoff S31 Lite ZB outlet"
     required: true
     preferenceType: string
     definition:
       stringType: text
+      minLength: 0
+      maxLength: 100
       default: ""
   - preferenceId: tempUnit
+    name: tempUnit
     title: "Temperature Unit"
     description: "Display temperature in Fahrenheit or Celsius"
     required: false
@@ -49,25 +70,18 @@ preferences:
         F: "Fahrenheit"
         C: "Celsius"
       default: "F"
-  - preferenceId: defaultHeatSetpoint
-    title: "Default Heat Setpoint"
-    description: "Default heating target temperature"
+  - preferenceId: comfortOffset
+    name: comfortOffset
+    title: "Comfort Offset (degrees)"
+    description: "Adjust setpoint from thermostat: +2 = heat/cool 2 degrees warmer, -2 = 2 degrees cooler"
     required: false
     preferenceType: integer
     definition:
-      minimum: 50
-      maximum: 90
-      default: 72
-  - preferenceId: defaultCoolSetpoint
-    title: "Default Cool Setpoint"
-    description: "Default cooling target temperature"
-    required: false
-    preferenceType: integer
-    definition:
-      minimum: 60
-      maximum: 95
-      default: 76
+      minimum: -5
+      maximum: 5
+      default: 0
   - preferenceId: deadband
+    name: deadband
     title: "Deadband (degrees)"
     description: "Temperature deadband to prevent short cycling"
     required: false
@@ -77,6 +91,7 @@ preferences:
       maximum: 5
       default: 2
   - preferenceId: maxRuntime
+    name: maxRuntime
     title: "Max Runtime (minutes)"
     description: "Safety shutoff after continuous runtime exceeds this value"
     required: false
@@ -86,6 +101,7 @@ preferences:
       maximum: 480
       default: 120
   - preferenceId: staleTempTimeout
+    name: staleTempTimeout
     title: "Stale Temp Timeout (minutes)"
     description: "Shut off outlet if no temperature update received within this time"
     required: false
@@ -95,6 +111,7 @@ preferences:
       maximum: 120
       default: 30
   - preferenceId: minCycleTime
+    name: minCycleTime
     title: "Min Cycle Time (minutes)"
     description: "Minimum time between outlet state changes to prevent short cycling"
     required: false
@@ -104,6 +121,7 @@ preferences:
       maximum: 15
       default: 5
   - preferenceId: scheduleEnabled
+    name: scheduleEnabled
     title: "Enable Schedule"
     description: "Enable day/night temperature setback schedule"
     required: false
@@ -111,6 +129,7 @@ preferences:
     definition:
       default: false
   - preferenceId: dayStartHour
+    name: dayStartHour
     title: "Day Start Hour (0-23)"
     description: "Hour when day schedule begins"
     required: false
@@ -120,6 +139,7 @@ preferences:
       maximum: 23
       default: 6
   - preferenceId: daySetpoint
+    name: daySetpoint
     title: "Day Setpoint"
     description: "Target temperature during day hours"
     required: false
@@ -129,6 +149,7 @@ preferences:
       maximum: 95
       default: 72
   - preferenceId: nightStartHour
+    name: nightStartHour
     title: "Night Start Hour (0-23)"
     description: "Hour when night schedule begins"
     required: false
@@ -138,6 +159,7 @@ preferences:
       maximum: 23
       default: 22
   - preferenceId: nightSetpoint
+    name: nightSetpoint
     title: "Night Setpoint"
     description: "Target temperature during night hours"
     required: false
@@ -147,6 +169,7 @@ preferences:
       maximum: 95
       default: 65
   - preferenceId: outdoorTempEnabled
+    name: outdoorTempEnabled
     title: "Enable Outdoor Temp Logic"
     description: "Use outdoor temperature to skip unnecessary heating/cooling"
     required: false

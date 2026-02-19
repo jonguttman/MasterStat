@@ -2,7 +2,6 @@
 -- Core decision engine: heat/cool/auto with hysteresis, safety checks, and integrations
 
 local constants = require "constants"
-local api_client = require "api_client"
 local scheduler = require "scheduler"
 local trend = require "trend"
 local log = require "log"
@@ -27,13 +26,14 @@ local function get_setpoint(device, mode)
   if scheduled then
     return scheduled
   end
+  local base
   if mode == "heat" then
-    return device:get_field(constants.FIELD_HEAT_SETPOINT) or
-           pref(device, "defaultHeatSetpoint", constants.DEFAULT_HEAT_SETPOINT)
+    base = device:get_field(constants.FIELD_HEAT_SETPOINT) or constants.DEFAULT_HEAT_SETPOINT
   else
-    return device:get_field(constants.FIELD_COOL_SETPOINT) or
-           pref(device, "defaultCoolSetpoint", constants.DEFAULT_COOL_SETPOINT)
+    base = device:get_field(constants.FIELD_COOL_SETPOINT) or constants.DEFAULT_COOL_SETPOINT
   end
+  local offset = pref(device, "comfortOffset", 0)
+  return base + offset
 end
 
 -- ============================================================
@@ -66,7 +66,8 @@ end
 local function check_stale_temp(device)
   local last_update = device:get_field(constants.FIELD_LAST_TEMP_UPDATE)
   if not last_update then
-    return true  -- no temp ever received = stale
+    -- No temp ever received — don't flag stale until we've had at least one reading
+    return false
   end
 
   local timeout = pref(device, "staleTempTimeout", constants.DEFAULT_STALE_TEMP_TIMEOUT)
@@ -129,9 +130,9 @@ local function should_skip_for_outdoor(device, mode, setpoint)
 end
 
 -- ============================================================
--- Set outlet state (with API call + state tracking)
+-- Set outlet state (track state; Routine mirrors operating state to outlet)
 -- ============================================================
-local function set_outlet(driver, device, on, operating_state_cap, status_cap)
+local function set_outlet(driver, device, on)
   local current = device:get_field(constants.FIELD_OUTLET_ON) or false
   if on == current then
     return  -- no change needed
@@ -141,22 +142,14 @@ local function set_outlet(driver, device, on, operating_state_cap, status_cap)
     return  -- respect min cycle time
   end
 
-  local pat = pref(device, "pat", "")
-  local outlet_id = pref(device, "outletDeviceId", "")
-
-  local success = api_client.set_switch(pat, outlet_id, on)
-  if success then
-    device:set_field(constants.FIELD_OUTLET_ON, on)
-    device:set_field(constants.FIELD_LAST_STATE_CHANGE, os.time())
-    if on then
-      device:set_field(constants.FIELD_OUTLET_ON_SINCE, os.time())
-    else
-      device:set_field(constants.FIELD_OUTLET_ON_SINCE, nil)
-    end
-    log.info(string.format("thermostat_logic: Outlet turned %s", on and "ON" or "OFF"))
+  device:set_field(constants.FIELD_OUTLET_ON, on)
+  device:set_field(constants.FIELD_LAST_STATE_CHANGE, os.time())
+  if on then
+    device:set_field(constants.FIELD_OUTLET_ON_SINCE, os.time())
   else
-    log.error("thermostat_logic: Failed to change outlet state via API")
+    device:set_field(constants.FIELD_OUTLET_ON_SINCE, nil)
   end
+  log.info(string.format("thermostat_logic: Outlet state → %s (Routine controls physical outlet)", on and "ON" or "OFF"))
 end
 
 -- ============================================================
@@ -200,7 +193,7 @@ function thermostat_logic.evaluate(driver, device, caps)
   -- Off mode: ensure outlet is off
   if mode == "off" then
     if outlet_on then
-      set_outlet(driver, device, false, caps.operating_state, caps.status_text)
+      set_outlet(driver, device, false)
     end
     if caps.operating_state then
       device:emit_event(caps.operating_state.thermostatOperatingState.idle())
@@ -216,7 +209,7 @@ function thermostat_logic.evaluate(driver, device, caps)
   if check_stale_temp(device) then
     device:set_field(constants.FIELD_STALE_ALERT, true)
     if outlet_on then
-      set_outlet(driver, device, false, caps.operating_state, caps.status_text)
+      set_outlet(driver, device, false)
     end
     local state = "idle"
     device:set_field(constants.FIELD_OPERATING_STATE, state)
@@ -239,7 +232,7 @@ function thermostat_logic.evaluate(driver, device, caps)
 
   -- Safety: max runtime
   if check_max_runtime(device) then
-    set_outlet(driver, device, false, caps.operating_state, caps.status_text)
+    set_outlet(driver, device, false)
     local state = "idle"
     device:set_field(constants.FIELD_OPERATING_STATE, state)
     if caps.operating_state then
@@ -329,7 +322,7 @@ function thermostat_logic.evaluate(driver, device, caps)
 
   -- Apply desired state
   local want_on = (desired_state == "heating" or desired_state == "cooling")
-  set_outlet(driver, device, want_on, caps.operating_state, caps.status_text)
+  set_outlet(driver, device, want_on)
 
   -- Emit operating state
   device:set_field(constants.FIELD_OPERATING_STATE, desired_state)
