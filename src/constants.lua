@@ -10,7 +10,7 @@ constants.DEFAULT_HEAT_SETPOINT = 72
 constants.DEFAULT_COOL_SETPOINT = 76
 constants.DEFAULT_DEADBAND = 2
 constants.DEFAULT_MAX_RUNTIME = 120       -- minutes
-constants.DEFAULT_STALE_TEMP_TIMEOUT = 30 -- minutes
+constants.DEFAULT_STALE_TEMP_TIMEOUT = 60 -- minutes
 constants.DEFAULT_MIN_CYCLE_TIME = 5      -- minutes
 constants.DEFAULT_TEMP_UNIT = "F"
 
@@ -34,6 +34,7 @@ constants.TREND_MAX_OFFSET = 2            -- max predictive offset in degrees
 constants.EVAL_INTERVAL = 30
 constants.STALE_CHECK_INTERVAL = 60
 constants.ENERGY_TRACK_INTERVAL = 60
+constants.STARTUP_DELAY_SEC = 60
 
 -- ============================================================
 -- Device field keys (for set_field / get_field)
@@ -52,7 +53,20 @@ constants.FIELD_AUTO_ACTION = "auto_action"
 constants.FIELD_TREND_READINGS = "trend_readings"
 constants.FIELD_ENERGY_TODAY_MINS = "energy_today_mins"
 constants.FIELD_ENERGY_DAY_OF_YEAR = "energy_day_of_year"
+constants.FIELD_HEAT_MINS_TODAY = "heat_mins_today"
+constants.FIELD_COOL_MINS_TODAY = "cool_mins_today"
+constants.FIELD_CYCLES_TODAY = "cycles_today"
+constants.FIELD_LAST_TRACKED_STATE = "last_tracked_state"
+constants.FIELD_COMFORT_MINS_TODAY = "comfort_mins_today"
+constants.FIELD_TRACKED_MINS_TODAY = "tracked_mins_today"
 constants.FIELD_STALE_ALERT = "stale_alert"
+constants.FIELD_MAX_RUNTIME_LOCKOUT = "max_runtime_lockout"
+constants.FIELD_STARTUP_LOCKOUT = "startup_lockout"
+constants.FIELD_TEMP1 = "temp_source_1"
+constants.FIELD_TEMP1_TIME = "temp_source_1_time"
+constants.FIELD_TEMP2 = "temp_source_2"
+constants.FIELD_TEMP2_TIME = "temp_source_2_time"
+constants.FIELD_LAST_MODE = "last_non_off_mode"
 
 -- ============================================================
 -- Custom capability JSON definitions
@@ -64,6 +78,42 @@ constants.SET_TEMPERATURE_CAP = [[
   "id": "benchventure06596.settemperature",
   "version": 1,
   "name": "setTemperature",
+  "status": "proposed",
+  "attributes": {
+    "temperature": {
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "value": { "type": "number" },
+          "unit": {
+            "type": "string",
+            "enum": ["F", "C"],
+            "default": "F"
+          }
+        }
+      }
+    }
+  },
+  "commands": {
+    "setTemperature": {
+      "name": "setTemperature",
+      "arguments": [
+        {
+          "name": "temperature",
+          "schema": { "type": "number" }
+        }
+      ]
+    }
+  }
+}
+]]
+
+constants.SET_TEMPERATURE_2_CAP = [[
+{
+  "id": "benchventure06596.settemperature2",
+  "version": 1,
+  "name": "setTemperature2",
   "status": "proposed",
   "attributes": {
     "temperature": {
@@ -170,6 +220,108 @@ constants.ENERGY_TRACKING_CAP = [[
             "enum": ["min"],
             "default": "min"
           }
+        }
+      }
+    }
+  },
+  "commands": {}
+}
+]]
+
+constants.ENERGY_DETAILS_CAP = [[
+{
+  "id": "benchventure06596.energydetails",
+  "version": 1,
+  "name": "energyDetails",
+  "status": "proposed",
+  "attributes": {
+    "heatingRuntime": {
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "value": { "type": "number" },
+          "unit": {
+            "type": "string",
+            "enum": ["min"],
+            "default": "min"
+          }
+        }
+      }
+    },
+    "coolingRuntime": {
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "value": { "type": "number" },
+          "unit": {
+            "type": "string",
+            "enum": ["min"],
+            "default": "min"
+          }
+        }
+      }
+    },
+    "dailyCycles": {
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "value": { "type": "number" }
+        }
+      }
+    },
+    "efficiency": {
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "value": { "type": "number" },
+          "unit": {
+            "type": "string",
+            "enum": ["%"],
+            "default": "%"
+          }
+        }
+      }
+    }
+  },
+  "commands": {}
+}
+]]
+
+constants.ENERGY_SUMMARY_CAP = [[
+{
+  "id": "benchventure06596.energysummary",
+  "version": 1,
+  "name": "energySummary",
+  "status": "proposed",
+  "attributes": {
+    "runtimeSummary": {
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "value": { "type": "string" }
+        }
+      }
+    },
+    "costSummary": {
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "value": { "type": "string" }
+        }
+      }
+    },
+    "efficiencySummary": {
+      "schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "value": { "type": "string" }
         }
       }
     }

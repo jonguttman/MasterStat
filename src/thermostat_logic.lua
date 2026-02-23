@@ -50,7 +50,7 @@ local function check_max_runtime(device)
     return false
   end
 
-  local max_runtime = pref(device, "maxRuntime", constants.DEFAULT_MAX_RUNTIME)
+  local max_runtime = tonumber(pref(device, "maxRuntime", constants.DEFAULT_MAX_RUNTIME)) or constants.DEFAULT_MAX_RUNTIME
   local elapsed_mins = (os.time() - on_since) / 60
 
   if elapsed_mins >= max_runtime then
@@ -64,21 +64,54 @@ end
 -- Safety: Stale temperature check
 -- ============================================================
 local function check_stale_temp(device)
-  local last_update = device:get_field(constants.FIELD_LAST_TEMP_UPDATE)
-  if not last_update then
-    -- No temp ever received — don't flag stale until we've had at least one reading
+  local now = os.time()
+  local timeout = tonumber(pref(device, "staleTempTimeout", constants.DEFAULT_STALE_TEMP_TIMEOUT)) or constants.DEFAULT_STALE_TEMP_TIMEOUT
+  local timeout_sec = timeout * 60
+
+  -- Check temperature sources — respect secondary sensor toggle
+  local t1_time = device:get_field(constants.FIELD_TEMP1_TIME)
+  local secondary_enabled = pref(device, "secondarySensorEnabled", true)
+  local t2_time = secondary_enabled and device:get_field(constants.FIELD_TEMP2_TIME) or nil
+
+  -- If no source has ever reported, don't flag stale
+  if not t1_time and not t2_time then
+    -- Fall back to legacy field for backward compatibility
+    local last_update = device:get_field(constants.FIELD_LAST_TEMP_UPDATE)
+    if not last_update then return false end
+    local elapsed_mins = (now - last_update) / 60
+    if elapsed_mins >= timeout then
+      log.warn(string.format("SAFETY: Stale temperature (%.0f min since last update, timeout=%d min)",
+        elapsed_mins, timeout))
+      -- Check stale override
+      if pref(device, "staleTempOverride", false) then
+        log.warn("SAFETY: Stale sensor override ACTIVE — continuing operation with stale data")
+        return false
+      end
+      return true
+    end
     return false
   end
 
-  local timeout = pref(device, "staleTempTimeout", constants.DEFAULT_STALE_TEMP_TIMEOUT)
-  local elapsed_mins = (os.time() - last_update) / 60
+  local t1_fresh = t1_time and (now - t1_time) < timeout_sec
+  local t2_fresh = t2_time and (now - t2_time) < timeout_sec
 
-  if elapsed_mins >= timeout then
-    log.warn(string.format("SAFETY: Stale temperature (%.0f min since last update, timeout=%d min)",
-      elapsed_mins, timeout))
-    return true
+  if t1_fresh or t2_fresh then
+    return false  -- at least one source is fresh
   end
-  return false
+
+  -- All applicable sources stale
+  local newest = math.max(t1_time or 0, t2_time or 0)
+  local elapsed_mins = (now - newest) / 60
+  log.warn(string.format("SAFETY: Stale temperature — all sources stale (%.0f min since newest update, timeout=%d min)",
+    elapsed_mins, timeout))
+
+  -- Check stale override
+  if pref(device, "staleTempOverride", false) then
+    log.warn("SAFETY: Stale sensor override ACTIVE — continuing operation with stale data")
+    return false
+  end
+
+  return true
 end
 
 -- ============================================================
@@ -90,7 +123,7 @@ local function can_change_state(device)
     return true
   end
 
-  local min_cycle = pref(device, "minCycleTime", constants.DEFAULT_MIN_CYCLE_TIME)
+  local min_cycle = tonumber(pref(device, "minCycleTime", constants.DEFAULT_MIN_CYCLE_TIME)) or constants.DEFAULT_MIN_CYCLE_TIME
   local elapsed_mins = (os.time() - last_change) / 60
 
   if elapsed_mins < min_cycle then
@@ -132,33 +165,59 @@ end
 -- ============================================================
 -- Set outlet state (track state; Routine mirrors operating state to outlet)
 -- ============================================================
-local function set_outlet(driver, device, on)
+local function set_outlet(driver, device, on, force)
   local current = device:get_field(constants.FIELD_OUTLET_ON) or false
   if on == current then
     return  -- no change needed
   end
 
-  if not can_change_state(device) then
+  if not force and not can_change_state(device) then
     return  -- respect min cycle time
   end
 
-  device:set_field(constants.FIELD_OUTLET_ON, on)
-  device:set_field(constants.FIELD_LAST_STATE_CHANGE, os.time())
+  device:set_field(constants.FIELD_OUTLET_ON, on, { persist = true })
+  device:set_field(constants.FIELD_LAST_STATE_CHANGE, os.time(), { persist = true })
   if on then
-    device:set_field(constants.FIELD_OUTLET_ON_SINCE, os.time())
+    device:set_field(constants.FIELD_OUTLET_ON_SINCE, os.time(), { persist = true })
   else
-    device:set_field(constants.FIELD_OUTLET_ON_SINCE, nil)
+    device:set_field(constants.FIELD_OUTLET_ON_SINCE, nil, { persist = true })
   end
-  log.info(string.format("thermostat_logic: Outlet state → %s (Routine controls physical outlet)", on and "ON" or "OFF"))
+  log.info(string.format("thermostat_logic: Outlet state → %s%s (Routine controls physical outlet)",
+    on and "ON" or "OFF", force and " (FORCED)" or ""))
 end
 
 -- ============================================================
 -- Build status text
 -- ============================================================
+local function is_sensor_stale(device)
+  local now = os.time()
+  local timeout = tonumber(pref(device, "staleTempTimeout", constants.DEFAULT_STALE_TEMP_TIMEOUT)) or constants.DEFAULT_STALE_TEMP_TIMEOUT
+  local timeout_sec = timeout * 60
+
+  local t1_time = device:get_field(constants.FIELD_TEMP1_TIME)
+  local secondary_enabled = pref(device, "secondarySensorEnabled", true)
+  local t2_time = secondary_enabled and device:get_field(constants.FIELD_TEMP2_TIME) or nil
+
+  if not t1_time and not t2_time then
+    local last_update = device:get_field(constants.FIELD_LAST_TEMP_UPDATE)
+    if not last_update then return false end
+    return (now - last_update) / 60 >= timeout
+  end
+
+  local t1_fresh = t1_time and (now - t1_time) < timeout_sec
+  local t2_fresh = t2_time and (now - t2_time) < timeout_sec
+  return not (t1_fresh or t2_fresh)
+end
+
 local function build_status(device, state, setpoint)
   local temp = device:get_field(constants.FIELD_CURRENT_TEMP)
   local unit = pref(device, "tempUnit", constants.DEFAULT_TEMP_UNIT)
   local stale = device:get_field(constants.FIELD_STALE_ALERT)
+  local lockout = device:get_field(constants.FIELD_MAX_RUNTIME_LOCKOUT)
+
+  if lockout then
+    return "SAFETY: Max runtime lockout — outlet OFF (change mode or setpoint to clear)"
+  end
 
   if stale then
     return "ALERT: Stale temperature — outlet OFF for safety"
@@ -168,15 +227,21 @@ local function build_status(device, state, setpoint)
     return "Waiting for temperature reading..."
   end
 
+  -- Check if stale override is active and sensor would be stale
+  local stale_warning = ""
+  if pref(device, "staleTempOverride", false) and is_sensor_stale(device) then
+    stale_warning = " (STALE SENSOR — override active)"
+  end
+
   if state == "heating" then
-    return string.format("Heating to %d%s%s (current: %.1f%s%s)",
-      setpoint, "\194\176", unit, temp, "\194\176", unit)
+    return string.format("Heating to %d%s%s (current: %.1f%s%s)%s",
+      setpoint, "\194\176", unit, temp, "\194\176", unit, stale_warning)
   elseif state == "cooling" then
-    return string.format("Cooling to %d%s%s (current: %.1f%s%s)",
-      setpoint, "\194\176", unit, temp, "\194\176", unit)
+    return string.format("Cooling to %d%s%s (current: %.1f%s%s)%s",
+      setpoint, "\194\176", unit, temp, "\194\176", unit, stale_warning)
   else
-    return string.format("Idle at %.1f%s%s (setpoint: %d%s%s)",
-      temp, "\194\176", unit, setpoint, "\194\176", unit)
+    return string.format("Idle at %.1f%s%s (setpoint: %d%s%s)%s",
+      temp, "\194\176", unit, setpoint, "\194\176", unit, stale_warning)
   end
 end
 
@@ -185,18 +250,40 @@ end
 -- Called on every temp update + periodically by timer
 -- ============================================================
 function thermostat_logic.evaluate(driver, device, caps)
+  -- Startup lockout: skip evaluation until startup delay completes
+  if device:get_field(constants.FIELD_STARTUP_LOCKOUT) then
+    log.debug("thermostat_logic: Startup lockout active — skipping evaluation")
+    return
+  end
+
   local mode = device:get_field(constants.FIELD_MODE) or "off"
   local temp = device:get_field(constants.FIELD_CURRENT_TEMP)
   local outlet_on = device:get_field(constants.FIELD_OUTLET_ON) or false
-  local deadband = pref(device, "deadband", constants.DEFAULT_DEADBAND)
+  local deadband_raw = tonumber(pref(device, "deadband", 20)) or 20
+  local deadband = deadband_raw / 10
 
-  -- Off mode: ensure outlet is off
+  -- Lockout check: if max runtime lockout is active, force off and return early
+  if device:get_field(constants.FIELD_MAX_RUNTIME_LOCKOUT) then
+    set_outlet(driver, device, false, true)
+    device:set_field(constants.FIELD_OPERATING_STATE, "idle")
+    if caps.operating_state then
+      device:emit_event(caps.operating_state.thermostatOperatingState(
+        { value = "idle" }, { state_change = true }))
+    end
+    if caps.status_text then
+      device:emit_event(caps.status_text.statusText({ value = build_status(device, "idle", 0) }))
+    end
+    return
+  end
+
+  -- Off mode: ensure outlet is off (force bypass min_cycle_time)
   if mode == "off" then
     if outlet_on then
-      set_outlet(driver, device, false)
+      set_outlet(driver, device, false, true)
     end
     if caps.operating_state then
-      device:emit_event(caps.operating_state.thermostatOperatingState.idle())
+      device:emit_event(caps.operating_state.thermostatOperatingState(
+        { value = "idle" }, { state_change = true }))
     end
     device:set_field(constants.FIELD_OPERATING_STATE, "idle")
     if caps.status_text then
@@ -205,16 +292,17 @@ function thermostat_logic.evaluate(driver, device, caps)
     return
   end
 
-  -- Safety: stale temperature
+  -- Safety: stale temperature (force bypass min_cycle_time)
   if check_stale_temp(device) then
     device:set_field(constants.FIELD_STALE_ALERT, true)
     if outlet_on then
-      set_outlet(driver, device, false)
+      set_outlet(driver, device, false, true)
     end
     local state = "idle"
     device:set_field(constants.FIELD_OPERATING_STATE, state)
     if caps.operating_state then
-      device:emit_event(caps.operating_state.thermostatOperatingState.idle())
+      device:emit_event(caps.operating_state.thermostatOperatingState(
+        { value = "idle" }, { state_change = true }))
     end
     if caps.status_text then
       device:emit_event(caps.status_text.statusText({ value = build_status(device, state, 0) }))
@@ -230,18 +318,18 @@ function thermostat_logic.evaluate(driver, device, caps)
     return
   end
 
-  -- Safety: max runtime
+  -- Safety: max runtime (force bypass min_cycle_time + set lockout)
   if check_max_runtime(device) then
-    set_outlet(driver, device, false)
+    device:set_field(constants.FIELD_MAX_RUNTIME_LOCKOUT, true, { persist = true })
+    set_outlet(driver, device, false, true)
     local state = "idle"
     device:set_field(constants.FIELD_OPERATING_STATE, state)
     if caps.operating_state then
-      device:emit_event(caps.operating_state.thermostatOperatingState.idle())
+      device:emit_event(caps.operating_state.thermostatOperatingState(
+        { value = "idle" }, { state_change = true }))
     end
     if caps.status_text then
-      device:emit_event(caps.status_text.statusText({
-        value = "SAFETY: Max runtime exceeded — outlet OFF"
-      }))
+      device:emit_event(caps.status_text.statusText({ value = build_status(device, state, 0) }))
     end
     return
   end
@@ -324,16 +412,12 @@ function thermostat_logic.evaluate(driver, device, caps)
   local want_on = (desired_state == "heating" or desired_state == "cooling")
   set_outlet(driver, device, want_on)
 
-  -- Emit operating state
+  -- Emit operating state (state_change = true ensures Routines re-fire every
+  -- eval cycle, so if a Routine misses one event the next cycle catches it)
   device:set_field(constants.FIELD_OPERATING_STATE, desired_state)
   if caps.operating_state then
-    if desired_state == "heating" then
-      device:emit_event(caps.operating_state.thermostatOperatingState.heating())
-    elseif desired_state == "cooling" then
-      device:emit_event(caps.operating_state.thermostatOperatingState.cooling())
-    else
-      device:emit_event(caps.operating_state.thermostatOperatingState.idle())
-    end
+    device:emit_event(caps.operating_state.thermostatOperatingState(
+      { value = desired_state }, { state_change = true }))
   end
 
   -- Emit status text
