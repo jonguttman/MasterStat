@@ -238,6 +238,191 @@ def append_csv(point):
         pass
 
 
+# ── History Backfill ─────────────────────────────────────────────
+
+BACKFILL_MIN_GAP = 120  # seconds — only backfill if gap > 2 minutes
+BACKFILL_SAMPLE_INTERVAL = 60  # one data point per minute
+
+
+def get_last_csv_timestamp():
+    """Return the timestamp of the last CSV row, or None if no data."""
+    if not os.path.exists(CSV_LOG_FILE):
+        return None
+    try:
+        with open(CSV_LOG_FILE, "r") as f:
+            lines = f.readlines()
+        for line in reversed(lines):
+            line = line.strip()
+            if not line or line.startswith("timestamp"):
+                continue
+            ts_str = line.split(",")[0]
+            return datetime.datetime.strptime(ts_str, "%Y-%m-%d %H:%M:%S")
+    except Exception:
+        return None
+    return None
+
+
+def fetch_history_chunk(device_id, after_iso, before_iso):
+    """Fetch device event history via SmartThings CLI for a time window."""
+    cli_path = shutil.which("smartthings")
+    if not cli_path:
+        return []
+    try:
+        result = subprocess.run(
+            [cli_path, "devices:history", device_id, "-j",
+             "-L", "200", "-A", after_iso, "-B", before_iso],
+            capture_output=True, timeout=30, text=True,
+        )
+        if result.returncode != 0:
+            return []
+        return json.loads(result.stdout)
+    except Exception:
+        return []
+
+
+def find_csv_gaps(min_gap_seconds=300):
+    """Scan CSV for gaps larger than min_gap_seconds. Returns list of (gap_start, gap_end, seed_state)."""
+    if not os.path.exists(CSV_LOG_FILE):
+        return []
+    gaps = []
+    prev_ts = None
+    prev_state = None
+    try:
+        with open(CSV_LOG_FILE, "r") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("timestamp"):
+                    continue
+                parts = line.split(",")
+                if len(parts) < 8:
+                    continue
+                try:
+                    ts = datetime.datetime.strptime(parts[0], "%Y-%m-%d %H:%M:%S")
+                except ValueError:
+                    continue
+                state = {
+                    "temp": float(parts[1]) if parts[1] else None,
+                    "outdoorTemp": float(parts[2]) if parts[2] else None,
+                    "heatingSetpoint": float(parts[3]) if parts[3] else None,
+                    "coolingSetpoint": float(parts[4]) if parts[4] else None,
+                    "operatingState": parts[5] or "idle",
+                    "mode": parts[6] or "heat",
+                    "outletSwitch": parts[7] or "off",
+                }
+                if prev_ts and (ts - prev_ts).total_seconds() > min_gap_seconds:
+                    gaps.append((prev_ts, ts, dict(prev_state)))
+                prev_ts = ts
+                prev_state = state
+    except Exception:
+        pass
+
+    # Also check gap from last entry to now
+    if prev_ts:
+        now = datetime.datetime.now()
+        if (now - prev_ts).total_seconds() > min_gap_seconds:
+            gaps.append((prev_ts, now, dict(prev_state) if prev_state else None))
+
+    return gaps
+
+
+def backfill_gap(gap_start, gap_end, seed_state):
+    """Backfill a single gap from SmartThings event history. Returns list of points."""
+    attr_map = {
+        "temperature": "temp",
+        "thermostatOperatingState": "operatingState",
+        "thermostatMode": "mode",
+        "outdoorTemperature": "outdoorTemp",
+        "heatingSetpoint": "heatingSetpoint",
+        "coolingSetpoint": "coolingSetpoint",
+    }
+
+    state = seed_state or {
+        "temp": None, "outdoorTemp": None,
+        "heatingSetpoint": None, "coolingSetpoint": None,
+        "operatingState": "idle", "mode": "heat", "outletSwitch": "off",
+    }
+
+    chunk_start = gap_start + datetime.timedelta(seconds=1)
+    points = []
+
+    while chunk_start < gap_end:
+        chunk_end = min(chunk_start + datetime.timedelta(hours=1), gap_end)
+        after_iso = chunk_start.strftime("%Y-%m-%dT%H:%M:%SZ")
+        before_iso = chunk_end.strftime("%Y-%m-%dT%H:%M:%SZ")
+
+        events = fetch_history_chunk(MASTERSTAT_ID, after_iso, before_iso)
+
+        if events:
+            events.sort(key=lambda e: e.get("epoch", 0))
+            for event in events:
+                attr = event.get("attribute", "")
+                if attr in attr_map:
+                    state[attr_map[attr]] = event.get("value")
+
+            if state["operatingState"] == "heating":
+                state["outletSwitch"] = "on"
+            elif state["operatingState"] in ("idle", "cooling"):
+                state["outletSwitch"] = "off"
+
+        if state["temp"] is not None:
+            mid = chunk_start + (chunk_end - chunk_start) / 2
+            points.append({
+                "ts": mid.timestamp(),
+                "temp": state["temp"],
+                "outdoorTemp": state["outdoorTemp"],
+                "heatingSetpoint": state["heatingSetpoint"],
+                "coolingSetpoint": state["coolingSetpoint"],
+                "operatingState": state["operatingState"],
+                "mode": state["mode"],
+                "outletSwitch": state["outletSwitch"],
+            })
+
+        chunk_start = chunk_end
+
+    return points
+
+
+def backfill_from_history():
+    """Scan CSV for gaps and fill them from SmartThings event history."""
+    gaps = find_csv_gaps(min_gap_seconds=BACKFILL_MIN_GAP)
+    if not gaps:
+        print("Backfill: No gaps detected in CSV data.")
+        return 0
+
+    print(f"Backfill: Found {len(gaps)} gap(s) to fill.")
+    total_points = 0
+
+    for gap_start, gap_end, seed_state in gaps:
+        gap_hours = (gap_end - gap_start).total_seconds() / 3600
+        # SmartThings event history is typically retained ~7 days
+        if gap_hours > 168:
+            print(f"  Gap {gap_start} → {gap_end} ({gap_hours:.1f}h) — too old, skipping.")
+            continue
+
+        print(f"  Filling {gap_start} → {gap_end} ({gap_hours:.1f}h)...")
+        points = backfill_gap(gap_start, gap_end, seed_state)
+
+        if points:
+            for point in points:
+                append_csv(point)
+            with _history_lock:
+                _history.extend(points)
+            total_points += len(points)
+            print(f"    Recovered {len(points)} data points.")
+        else:
+            print(f"    No data recovered (device may have been offline).")
+
+    if total_points:
+        with _history_lock:
+            # Re-sort history by timestamp after inserting backfill points
+            _history.sort(key=lambda h: h.get("ts", 0))
+            prune_history()
+            save_history()
+        print(f"Backfill: Total {total_points} data points recovered.")
+
+    return total_points
+
+
 # ── Background Poller ────────────────────────────────────────────
 
 def start_poller(pat):
@@ -1213,6 +1398,9 @@ def main():
     # Load existing history from disk
     load_history()
     init_csv()
+
+    # Backfill any gaps from SmartThings event history
+    backfill_from_history()
 
     # Start background poller
     DashboardHandler.pat = pat

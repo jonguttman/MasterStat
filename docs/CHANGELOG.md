@@ -12,6 +12,7 @@
 - New field `FIELD_LAST_AUTO_SWITCH_TIME` for mode-switch cooldown tracking
 - `trend.get_rate()` public API for raw temperature rate of change
 - Safety Rule: heater outlet forced OFF when operating state is cooling (prevents simultaneous heat + AC)
+- Dashboard auto-backfill: on startup, scans CSV for gaps and fills them from SmartThings event history (up to 7 days)
 
 ### Pending
 - Cooling output (Mysa mini-split) not yet wired — Mysa SmartThings integration lacks cooling capabilities; needs physical Zigbee plug as Alexa routine trigger bridge (~$10) or Raspberry Pi bridge
