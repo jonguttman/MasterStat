@@ -163,6 +163,81 @@ local function should_skip_for_outdoor(device, mode, setpoint)
 end
 
 -- ============================================================
+-- Auto mode: mode-switch cooldown check
+-- ============================================================
+local function check_auto_cooldown(device)
+  local last_switch = device:get_field(constants.FIELD_LAST_AUTO_SWITCH_TIME)
+  if not last_switch then
+    return false  -- no previous switch, no cooldown needed
+  end
+
+  local cooldown = tonumber(pref(device, "modeSwitchCooldown", constants.DEFAULT_MODE_SWITCH_COOLDOWN))
+    or constants.DEFAULT_MODE_SWITCH_COOLDOWN
+  local elapsed_mins = (os.time() - last_switch) / 60
+
+  if elapsed_mins < cooldown then
+    log.debug(string.format("thermostat_logic: Auto mode-switch cooldown active (%.1f < %d min)", elapsed_mins, cooldown))
+    return true
+  end
+  return false
+end
+
+-- ============================================================
+-- Auto mode: smart signal evaluation for dead zone decisions
+-- ============================================================
+local function auto_smart_bias(device, mode_candidate)
+  -- Returns true if the candidate mode should be SUPPRESSED
+  local outdoor = device:get_field(constants.FIELD_OUTDOOR_TEMP)
+
+  -- Outdoor temperature bias
+  if pref(device, "autoOutdoorBias", true) and outdoor then
+    local heat_below = tonumber(pref(device, "autoOutdoorHeatBelow", constants.DEFAULT_AUTO_OUTDOOR_HEAT_BELOW))
+      or constants.DEFAULT_AUTO_OUTDOOR_HEAT_BELOW
+    local cool_above = tonumber(pref(device, "autoOutdoorCoolAbove", constants.DEFAULT_AUTO_OUTDOOR_COOL_ABOVE))
+      or constants.DEFAULT_AUTO_OUTDOOR_COOL_ABOVE
+
+    if mode_candidate == "heating" and outdoor > cool_above then
+      log.info(string.format("thermostat_logic: Auto suppressing heat — outdoor %.1f > %d (too warm outside to heat)", outdoor, cool_above))
+      return true
+    end
+    if mode_candidate == "cooling" and outdoor < heat_below then
+      log.info(string.format("thermostat_logic: Auto suppressing cool — outdoor %.1f < %d (too cold outside to cool)", outdoor, heat_below))
+      return true
+    end
+  end
+
+  -- Trend awareness: don't fight momentum
+  local rate = trend.get_rate(device)
+  if rate ~= 0 then
+    if mode_candidate == "cooling" and rate < -0.01 then
+      log.info(string.format("thermostat_logic: Auto suppressing cool — temp already dropping (%.3f deg/min)", rate))
+      return true
+    end
+    if mode_candidate == "heating" and rate > 0.01 then
+      log.info(string.format("thermostat_logic: Auto suppressing heat — temp already rising (%.3f deg/min)", rate))
+      return true
+    end
+  end
+
+  -- Time-of-day: suppress cooling in the evening when outdoor temp is dropping
+  if pref(device, "autoTimeAware", true) and mode_candidate == "cooling" then
+    local hour = tonumber(os.date("%H"))
+    local evening_start = constants.DEFAULT_EVENING_START_HOUR
+    if hour >= evening_start and outdoor then
+      local cool_above = tonumber(pref(device, "autoOutdoorCoolAbove", constants.DEFAULT_AUTO_OUTDOOR_COOL_ABOVE))
+        or constants.DEFAULT_AUTO_OUTDOOR_COOL_ABOVE
+      -- In the evening, if outdoor temp is below the cool threshold, suppress cooling
+      if outdoor < cool_above then
+        log.info(string.format("thermostat_logic: Auto suppressing cool — evening (hour=%d) and outdoor %.1f < %d", hour, outdoor, cool_above))
+        return true
+      end
+    end
+  end
+
+  return false  -- no suppression
+end
+
+-- ============================================================
 -- Set outlet state (track state; Routine mirrors operating state to outlet)
 -- ============================================================
 local function set_outlet(driver, device, on, force)
@@ -378,31 +453,57 @@ function thermostat_logic.evaluate(driver, device, caps)
     local heat_offset = trend.get_predictive_offset(device, "heat")
     local cool_offset = trend.get_predictive_offset(device, "cool")
     local auto_action = device:get_field(constants.FIELD_AUTO_ACTION) or "idle"
+    local in_cooldown = check_auto_cooldown(device)
 
-    if should_skip_for_outdoor(device, "heat", heat_sp) then
-      -- Don't heat
+    -- If in cooldown between mode switches, force idle
+    if in_cooldown and auto_action == "idle" then
+      desired_state = "idle"
+      active_setpoint = heat_sp
+
+    -- Continue existing commitment (hysteresis)
     elseif auto_action == "heating" and temp < heat_sp then
       desired_state = "heating"
       active_setpoint = heat_sp
-    elseif temp < (heat_sp - deadband + heat_offset) then
-      desired_state = "heating"
-      active_setpoint = heat_sp
-    end
 
-    if desired_state == "idle" then
-      if should_skip_for_outdoor(device, "cool", cool_sp) then
-        -- Don't cool
-      elseif auto_action == "cooling" and temp > cool_sp then
-        desired_state = "cooling"
-        active_setpoint = cool_sp
-      elseif temp > (cool_sp + deadband - cool_offset) then
+    elseif auto_action == "cooling" and temp > cool_sp then
+      desired_state = "cooling"
+      active_setpoint = cool_sp
+
+    -- Hard triggers (outside deadband — unconditional)
+    elseif not should_skip_for_outdoor(device, "heat", heat_sp) and temp < (heat_sp - deadband + heat_offset) then
+      if not auto_smart_bias(device, "heating") then
+        desired_state = "heating"
+        active_setpoint = heat_sp
+      end
+
+    elseif not should_skip_for_outdoor(device, "cool", cool_sp) and temp > (cool_sp + deadband - cool_offset) then
+      if not auto_smart_bias(device, "cooling") then
         desired_state = "cooling"
         active_setpoint = cool_sp
       end
     end
 
+    -- Default idle setpoint display
     if desired_state == "idle" then
-      active_setpoint = heat_sp  -- show heat setpoint when idle in auto
+      active_setpoint = heat_sp
+    end
+
+    -- Track mode switches for cooldown
+    local prev_action = auto_action
+    if desired_state ~= "idle" and desired_state ~= prev_action and prev_action ~= "idle" then
+      -- Switching from one active mode to another (heat→cool or cool→heat)
+      -- Force idle and start cooldown
+      log.info(string.format("thermostat_logic: Auto mode switch %s→%s — entering cooldown", prev_action, desired_state))
+      device:set_field(constants.FIELD_LAST_AUTO_SWITCH_TIME, os.time(), { persist = true })
+      desired_state = "idle"
+      active_setpoint = heat_sp
+    elseif desired_state ~= "idle" and prev_action == "idle" and
+           device:get_field(constants.FIELD_LAST_AUTO_SWITCH_TIME) then
+      -- Starting from idle after a previous switch — only if cooldown has passed
+      if in_cooldown then
+        desired_state = "idle"
+        active_setpoint = heat_sp
+      end
     end
 
     device:set_field(constants.FIELD_AUTO_ACTION, desired_state)

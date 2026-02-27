@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.7.1 — 2026-02-26
+
+### Added
+- Smart auto-switching logic in `thermostat_logic.evaluate()` for auto mode
+- Outdoor temperature bias: suppress heating when outdoor temp is above cool threshold, suppress cooling when below heat threshold
+- Trend awareness: suppress cooling when temp is already dropping, suppress heating when already rising (via new `trend.get_rate()`)
+- Time-of-day awareness: suppress cooling in the evening when outdoor temp is below cool threshold
+- Mode-switch cooldown: enforce idle period (default 10 min) between heat-to-cool or cool-to-heat transitions in auto mode
+- New public function `trend.get_rate(device)` exposing raw temperature rate of change (degrees/minute)
+
+### Changed
+- Auto mode block in `evaluate()` rewritten with structured if/elseif chain: cooldown gating, hysteresis continuation, hard triggers with smart bias, and mode-switch tracking
+
 ## v0.7.0 — 2026-02-26
 
 ### Added

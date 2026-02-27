@@ -85,4 +85,15 @@ function trend.get_predictive_offset(device, mode)
   return offset
 end
 
+--- Get the raw rate of temperature change
+-- @param device table SmartThings device object
+-- @return number rate in degrees per minute (positive = warming, negative = cooling)
+function trend.get_rate(device)
+  local readings = device:get_field(constants.FIELD_TREND_READINGS)
+  if not readings or #readings < 3 then
+    return 0
+  end
+  return calc_rate(readings)
+end
+
 return trend
