@@ -226,3 +226,49 @@ preferences:
       minimum: 1
       maximum: 100
       default: 15
+  - preferenceId: autoOutdoorBias
+    name: autoOutdoorBias
+    title: "Auto: Outdoor Temp Bias"
+    description: "In auto mode, use outdoor temperature to bias toward heating or cooling"
+    required: false
+    preferenceType: boolean
+    definition:
+      default: true
+  - preferenceId: autoOutdoorHeatBelow
+    name: autoOutdoorHeatBelow
+    title: "Auto: Heat Below Outdoor Temp (°F)"
+    description: "In auto mode, bias toward heating when outdoor temp is below this value"
+    required: false
+    preferenceType: integer
+    definition:
+      minimum: 30
+      maximum: 80
+      default: 55
+  - preferenceId: autoOutdoorCoolAbove
+    name: autoOutdoorCoolAbove
+    title: "Auto: Cool Above Outdoor Temp (°F)"
+    description: "In auto mode, bias toward cooling when outdoor temp is above this value"
+    required: false
+    preferenceType: integer
+    definition:
+      minimum: 50
+      maximum: 100
+      default: 75
+  - preferenceId: modeSwitchCooldown
+    name: modeSwitchCooldown
+    title: "Auto: Mode Switch Cooldown (min)"
+    description: "Minutes of idle between switching from heating to cooling or vice versa"
+    required: false
+    preferenceType: integer
+    definition:
+      minimum: 0
+      maximum: 30
+      default: 10
+  - preferenceId: autoTimeAware
+    name: autoTimeAware
+    title: "Auto: Time-of-Day Awareness"
+    description: "In auto mode, suppress cooling in the evening when outdoor temp is dropping (it will cool naturally overnight)"
+    required: false
+    preferenceType: boolean
+    definition:
+      default: true

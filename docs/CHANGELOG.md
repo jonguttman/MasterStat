@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.7.0 — 2026-02-26
+
+### Added
+- Smart auto-switching constants and preferences for auto mode enhancements
+- New field key `FIELD_LAST_AUTO_SWITCH_TIME` for tracking heat/cool transitions
+- Default values: `DEFAULT_AUTO_OUTDOOR_HEAT_BELOW` (55°F), `DEFAULT_AUTO_OUTDOOR_COOL_ABOVE` (75°F), `DEFAULT_MODE_SWITCH_COOLDOWN` (10 min), `DEFAULT_EVENING_START_HOUR` (6 PM)
+- 5 new device preferences: `autoOutdoorBias`, `autoOutdoorHeatBelow`, `autoOutdoorCoolAbove`, `modeSwitchCooldown`, `autoTimeAware`
+
 ## v0.6.4 — 2026-02-26
 
 ### Fixed

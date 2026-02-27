@@ -28,6 +28,12 @@ constants.OUTDOOR_COOL_SKIP_OFFSET = 5
 constants.TREND_WINDOW_SIZE = 10
 constants.TREND_MAX_OFFSET = 2            -- max predictive offset in degrees
 
+-- Auto-switching defaults
+constants.DEFAULT_AUTO_OUTDOOR_HEAT_BELOW = 55  -- outdoor °F below which auto biases to heating
+constants.DEFAULT_AUTO_OUTDOOR_COOL_ABOVE = 75  -- outdoor °F above which auto biases to cooling
+constants.DEFAULT_MODE_SWITCH_COOLDOWN = 10     -- minutes between heat↔cool transitions
+constants.DEFAULT_EVENING_START_HOUR = 18       -- 6 PM — evening suppression begins
+
 -- ============================================================
 -- Timer intervals (seconds)
 -- ============================================================
@@ -67,6 +73,7 @@ constants.FIELD_TEMP1_TIME = "temp_source_1_time"
 constants.FIELD_TEMP2 = "temp_source_2"
 constants.FIELD_TEMP2_TIME = "temp_source_2_time"
 constants.FIELD_LAST_MODE = "last_non_off_mode"
+constants.FIELD_LAST_AUTO_SWITCH_TIME = "last_auto_switch_time"
 
 -- ============================================================
 -- Custom capability JSON definitions
