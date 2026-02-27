@@ -55,6 +55,13 @@ Document bugs encountered during development and deployment. Format:
 - **Fix:** Created a redundant Rule "MasterStat: Outlet OFF when mode off" (`0e90e445-503b-472a-89d8-f458f1ae05ab`) that fires on `thermostatMode == "off"` — a different attribute/trigger path. Now setting mode to off triggers TWO independent Rules: one on operating state change, one on mode change. Also added CSV logging with outlet switch state for future debugging.
 - **Prevention:** For critical state changes, use redundant Rules on different trigger attributes. Don't rely on a single Rule + `state_change=true` for safety-critical actions. SmartThings Rules may deduplicate events with the same value regardless of the `state_change` flag.
 
+## Bug: Dashboard 401 Auth Error Fails Silently with CLI Credentials
+- **Date:** 2026-02-26
+- **Symptoms:** Dashboard gets 401 Unauthorized from SmartThings API. No useful error message — the CLI token refresh runs but the user has no indication it failed or why. Dashboard keeps retrying with the same expired token.
+- **Root Cause:** `refresh_cli_token()` did not check `subprocess.run` return code or capture stderr. When the CLI itself failed (e.g., expired OAuth session requiring re-authentication), the function returned silently as if it succeeded. The caller then re-read the same stale token from the credentials file.
+- **Fix:** (1) Added return code check and stderr logging to `refresh_cli_token()` with actionable TIP messages. (2) Added startup validation that checks CLI credentials file exists and CLI binary is on PATH before starting the poll loop. (3) Added `text=True` to subprocess call so stderr is captured as a string.
+- **Prevention:** Always check subprocess return codes. Any function that can fail should produce actionable error messages explaining what the user should do (e.g., "run X manually" or "set env var Y").
+
 ## Bug: Hub Rejects Events for New Attributes Added to Existing Capability
 - **Date:** 2026-02-19
 - **Symptoms:** `WARN Failed to send event: {unit="min", value=0} for energyTracking.heatingRuntime Failed to process event` after adding `heatingRuntime`, `coolingRuntime`, `dailyCycles`, `efficiency` attributes to existing `energytracking` capability via `capabilities:update`.

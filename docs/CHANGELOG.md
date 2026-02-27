@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.6.4 — 2026-02-26
+
+### Fixed
+- `refresh_cli_token()` now checks return code and logs stderr on failure (previously failed silently)
+- Added `text=True` to subprocess call so stderr is captured as a string, not bytes
+- Actionable error messages with TIP lines guiding users to `--pat` or `SMARTTHINGS_PAT` env var
+
+### Added
+- Startup credential validation: when using CLI auth, checks that credentials file exists and CLI binary is on PATH before attempting API calls
+- WARNING at startup if CLI binary is missing (token refresh on 401 will fail)
+
 ## v0.5.2 — 2026-02-21
 
 ### Fixed

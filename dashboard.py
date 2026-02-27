@@ -43,11 +43,21 @@ def refresh_cli_token():
     """Run a lightweight CLI command to trigger OAuth token refresh."""
     cli_path = shutil.which("smartthings")
     if not cli_path:
+        print("ERROR: smartthings CLI not found on PATH. Use --pat or SMARTTHINGS_PAT env var instead.")
         raise RuntimeError("smartthings CLI not found on PATH")
-    subprocess.run(
+    print(f"Refreshing token via CLI ({cli_path})...")
+    result = subprocess.run(
         [cli_path, "devices", "-j"],
-        capture_output=True, timeout=30,
+        capture_output=True, timeout=30, text=True,
     )
+    if result.returncode != 0:
+        print(f"ERROR: CLI token refresh failed (exit code {result.returncode})")
+        if result.stderr:
+            print(f"  stderr: {result.stderr.strip()}")
+        print("TIP: Run 'smartthings devices' manually to re-authenticate,")
+        print("     or set SMARTTHINGS_PAT env var with a Personal Access Token.")
+        raise RuntimeError(f"CLI token refresh failed: {result.stderr.strip()}")
+    print("Token refreshed successfully via CLI.")
 
 
 def api_get(path, pat):
@@ -1180,6 +1190,17 @@ def main():
         if not pat:
             print("Error: No credentials found. Set SMARTTHINGS_PAT env var or install SmartThings CLI.")
             sys.exit(1)
+
+    # Validate credential source before starting
+    if pat == "CLI":
+        if not os.path.exists(CLI_CREDS_FILE):
+            print(f"ERROR: CLI credentials file not found: {CLI_CREDS_FILE}")
+            print("TIP: Run 'smartthings devices' to authenticate, or set SMARTTHINGS_PAT env var.")
+            sys.exit(1)
+        cli_path = shutil.which("smartthings")
+        if not cli_path:
+            print("WARNING: smartthings CLI not found on PATH. Token refresh on 401 will fail.")
+            print("TIP: Set SMARTTHINGS_PAT env var for reliable auth without CLI dependency.")
 
     print("Validating credentials...")
     try:
