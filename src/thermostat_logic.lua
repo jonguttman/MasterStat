@@ -209,19 +209,19 @@ local function auto_smart_bias(device, mode_candidate)
   -- Trend awareness: don't fight momentum
   local rate = trend.get_rate(device)
   if rate ~= 0 then
-    if mode_candidate == "cooling" and rate < -0.01 then
+    if mode_candidate == "cooling" and rate < -0.1 then
       log.info(string.format("thermostat_logic: Auto suppressing cool — temp already dropping (%.3f deg/min)", rate))
       return true
     end
-    if mode_candidate == "heating" and rate > 0.01 then
+    if mode_candidate == "heating" and rate > 0.1 then
       log.info(string.format("thermostat_logic: Auto suppressing heat — temp already rising (%.3f deg/min)", rate))
       return true
     end
   end
 
-  -- Time-of-day: suppress cooling in the evening when outdoor temp is dropping
+  -- Time-of-day: suppress cooling in the evening when outdoor temp is below cool threshold
   if pref(device, "autoTimeAware", true) and mode_candidate == "cooling" then
-    local hour = tonumber(os.date("%H"))
+    local hour = tonumber(os.date("%H"))  -- hub local time (set in SmartThings app)
     local evening_start = constants.DEFAULT_EVENING_START_HOUR
     if hour >= evening_start and outdoor then
       local cool_above = tonumber(pref(device, "autoOutdoorCoolAbove", constants.DEFAULT_AUTO_OUTDOOR_COOL_ABOVE))
@@ -454,11 +454,12 @@ function thermostat_logic.evaluate(driver, device, caps)
     local cool_offset = trend.get_predictive_offset(device, "cool")
     local auto_action = device:get_field(constants.FIELD_AUTO_ACTION) or "idle"
     local in_cooldown = check_auto_cooldown(device)
+    active_setpoint = heat_sp  -- default for idle display
 
     -- If in cooldown between mode switches, force idle
+    -- (covers post-switch idle enforcement when FIELD_LAST_AUTO_SWITCH_TIME is set)
     if in_cooldown and auto_action == "idle" then
       desired_state = "idle"
-      active_setpoint = heat_sp
 
     -- Continue existing commitment (hysteresis)
     elseif auto_action == "heating" and temp < heat_sp then
@@ -483,11 +484,6 @@ function thermostat_logic.evaluate(driver, device, caps)
       end
     end
 
-    -- Default idle setpoint display
-    if desired_state == "idle" then
-      active_setpoint = heat_sp
-    end
-
     -- Track mode switches for cooldown
     local prev_action = auto_action
     if desired_state ~= "idle" and desired_state ~= prev_action and prev_action ~= "idle" then
@@ -497,13 +493,6 @@ function thermostat_logic.evaluate(driver, device, caps)
       device:set_field(constants.FIELD_LAST_AUTO_SWITCH_TIME, os.time(), { persist = true })
       desired_state = "idle"
       active_setpoint = heat_sp
-    elseif desired_state ~= "idle" and prev_action == "idle" and
-           device:get_field(constants.FIELD_LAST_AUTO_SWITCH_TIME) then
-      -- Starting from idle after a previous switch — only if cooldown has passed
-      if in_cooldown then
-        desired_state = "idle"
-        active_setpoint = heat_sp
-      end
     end
 
     device:set_field(constants.FIELD_AUTO_ACTION, desired_state)
