@@ -240,7 +240,7 @@ def append_csv(point):
 
 # ── History Backfill ─────────────────────────────────────────────
 
-BACKFILL_MIN_GAP = 120  # seconds — only backfill if gap > 2 minutes
+BACKFILL_MIN_GAP = 7200  # seconds — only backfill gaps > 2 hours
 BACKFILL_SAMPLE_INTERVAL = 60  # one data point per minute
 
 
@@ -284,9 +284,9 @@ def find_csv_gaps(min_gap_seconds=300):
     """Scan CSV for gaps larger than min_gap_seconds. Returns list of (gap_start, gap_end, seed_state)."""
     if not os.path.exists(CSV_LOG_FILE):
         return []
-    gaps = []
-    prev_ts = None
-    prev_state = None
+
+    # Read and sort all rows by timestamp to handle out-of-order appends
+    rows = []
     try:
         with open(CSV_LOG_FILE, "r") as f:
             for line in f:
@@ -300,21 +300,29 @@ def find_csv_gaps(min_gap_seconds=300):
                     ts = datetime.datetime.strptime(parts[0], "%Y-%m-%d %H:%M:%S")
                 except ValueError:
                     continue
-                state = {
-                    "temp": float(parts[1]) if parts[1] else None,
-                    "outdoorTemp": float(parts[2]) if parts[2] else None,
-                    "heatingSetpoint": float(parts[3]) if parts[3] else None,
-                    "coolingSetpoint": float(parts[4]) if parts[4] else None,
-                    "operatingState": parts[5] or "idle",
-                    "mode": parts[6] or "heat",
-                    "outletSwitch": parts[7] or "off",
-                }
-                if prev_ts and (ts - prev_ts).total_seconds() > min_gap_seconds:
-                    gaps.append((prev_ts, ts, dict(prev_state)))
-                prev_ts = ts
-                prev_state = state
+                rows.append((ts, parts))
     except Exception:
-        pass
+        return []
+
+    rows.sort(key=lambda r: r[0])
+
+    gaps = []
+    prev_ts = None
+    prev_state = None
+    for ts, parts in rows:
+        state = {
+            "temp": float(parts[1]) if parts[1] else None,
+            "outdoorTemp": float(parts[2]) if parts[2] else None,
+            "heatingSetpoint": float(parts[3]) if parts[3] else None,
+            "coolingSetpoint": float(parts[4]) if parts[4] else None,
+            "operatingState": parts[5] or "idle",
+            "mode": parts[6] or "heat",
+            "outletSwitch": parts[7] or "off",
+        }
+        if prev_ts and (ts - prev_ts).total_seconds() > min_gap_seconds:
+            gaps.append((prev_ts, ts, dict(prev_state)))
+        prev_ts = ts
+        prev_state = state
 
     # Also check gap from last entry to now
     if prev_ts:
