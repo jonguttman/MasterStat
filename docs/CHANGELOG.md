@@ -11,7 +11,9 @@
 - 5 new preferences: `autoOutdoorBias`, `autoOutdoorHeatBelow`, `autoOutdoorCoolAbove`, `modeSwitchCooldown`, `autoTimeAware`
 - New field `FIELD_LAST_AUTO_SWITCH_TIME` for mode-switch cooldown tracking
 - `trend.get_rate()` public API for raw temperature rate of change
-- Rules API rules for Mysa mini-split control (cool on, cool off, safety off)
+- "MasterStat Cooling Signal" virtual switch for Alexa routine integration
+- Rules API rules for cooling signal (cool on → switch on, idle → switch off, mode off → switch off)
+- Safety Rule: heater outlet forced OFF when operating state is cooling (prevents simultaneous heat + AC)
 
 ### Changed
 - Existing outlet-on Rule modified to fire on `thermostatOperatingState = "heating"` only (was heating OR cooling)
