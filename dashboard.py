@@ -56,7 +56,8 @@ def refresh_cli_token():
             print(f"  stderr: {result.stderr.strip()}")
         print("TIP: Run 'smartthings devices' manually to re-authenticate,")
         print("     or set SMARTTHINGS_PAT env var with a Personal Access Token.")
-        raise RuntimeError(f"CLI token refresh failed: {result.stderr.strip()}")
+        detail = result.stderr.strip() or result.stdout.strip() or f"exit code {result.returncode}"
+        raise RuntimeError(f"CLI token refresh failed: {detail}")
     print("Token refreshed successfully via CLI.")
 
 
@@ -1193,10 +1194,6 @@ def main():
 
     # Validate credential source before starting
     if pat == "CLI":
-        if not os.path.exists(CLI_CREDS_FILE):
-            print(f"ERROR: CLI credentials file not found: {CLI_CREDS_FILE}")
-            print("TIP: Run 'smartthings devices' to authenticate, or set SMARTTHINGS_PAT env var.")
-            sys.exit(1)
         cli_path = shutil.which("smartthings")
         if not cli_path:
             print("WARNING: smartthings CLI not found on PATH. Token refresh on 401 will fail.")
