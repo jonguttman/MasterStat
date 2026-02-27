@@ -1,36 +1,25 @@
 # Changelog
 
-## v0.7.1 — 2026-02-26
-
-### Added
-- Smart auto-switching logic in `thermostat_logic.evaluate()` for auto mode
-- Outdoor temperature bias: suppress heating when outdoor temp is above cool threshold, suppress cooling when below heat threshold
-- Trend awareness: suppress cooling when temp is already dropping, suppress heating when already rising (via new `trend.get_rate()`)
-- Time-of-day awareness: suppress cooling in the evening when outdoor temp is below cool threshold
-- Mode-switch cooldown: enforce idle period (default 10 min) between heat-to-cool or cool-to-heat transitions in auto mode
-- New public function `trend.get_rate(device)` exposing raw temperature rate of change (degrees/minute)
-
-### Changed
-- Auto mode block in `evaluate()` rewritten with structured if/elseif chain: cooldown gating, hysteresis continuation, hard triggers with smart bias, and mode-switch tracking
-
 ## v0.7.0 — 2026-02-26
 
 ### Added
-- Smart auto-switching constants and preferences for auto mode enhancements
-- New field key `FIELD_LAST_AUTO_SWITCH_TIME` for tracking heat/cool transitions
-- Default values: `DEFAULT_AUTO_OUTDOOR_HEAT_BELOW` (55°F), `DEFAULT_AUTO_OUTDOOR_COOL_ABOVE` (75°F), `DEFAULT_MODE_SWITCH_COOLDOWN` (10 min), `DEFAULT_EVENING_START_HOUR` (6 PM)
-- 5 new device preferences: `autoOutdoorBias`, `autoOutdoorHeatBelow`, `autoOutdoorCoolAbove`, `modeSwitchCooldown`, `autoTimeAware`
+- Smart auto-switching between heating (Sonoff outlet) and cooling (Mysa mini-split)
+  - Outdoor temperature bias: biases toward heating when cold outside, cooling when warm
+  - Trend awareness: suppresses cooling when temp is already dropping, heating when rising
+  - Time-of-day context: suppresses cooling in the evening when outdoor temp is mild
+  - Mode-switch cooldown: configurable idle period (default 10 min) between heat/cool transitions
+- 5 new preferences: `autoOutdoorBias`, `autoOutdoorHeatBelow`, `autoOutdoorCoolAbove`, `modeSwitchCooldown`, `autoTimeAware`
+- New field `FIELD_LAST_AUTO_SWITCH_TIME` for mode-switch cooldown tracking
+- `trend.get_rate()` public API for raw temperature rate of change
+- Rules API rules for Mysa mini-split control (cool on, cool off, safety off)
 
-## v0.6.4 — 2026-02-26
+### Changed
+- Existing outlet-on Rule modified to fire on `thermostatOperatingState = "heating"` only (was heating OR cooling)
+- Auto mode block in `evaluate()` rewritten with smart signal evaluation
 
 ### Fixed
-- `refresh_cli_token()` now checks return code and logs stderr on failure (previously failed silently)
-- Added `text=True` to subprocess call so stderr is captured as a string, not bytes
-- Actionable error messages with TIP lines guiding users to `--pat` or `SMARTTHINGS_PAT` env var
-
-### Added
-- Startup credential validation: when using CLI auth, checks that credentials file exists and CLI binary is on PATH before attempting API calls
-- WARNING at startup if CLI binary is missing (token refresh on 401 will fail)
+- Dashboard 401 error: improved error handling in `refresh_cli_token()` with actionable error messages
+- Dashboard startup now validates CLI credentials and binary availability
 
 ## v0.5.2 — 2026-02-21
 
